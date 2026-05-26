@@ -11,89 +11,56 @@ app.config['SECRET_KEY'] = 'parqueadero_universidad_2024'
 
 db = SQLAlchemy(app)
 
+# ─── MODELOS ──────────────────────────────────────────────────────────────────
 
-# ─── MODELOS (clases que representan las tablas de la base de datos) ───────────
+class Usuario(db.Model):
+    """Clase base que representa cualquier usuario del parqueadero"""
+    __tablename__ = 'usuarios'
 
-class Vehiculo(db.Model):
-    """Clase base que representa cualquier vehículo en el sistema"""
-    __tablename__ = 'vehiculos'
+    id             = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    documento      = db.Column(db.BigInteger, unique=True, nullable=False)
+    nombre         = db.Column(db.String(100), nullable=False)
+    correo         = db.Column(db.String(100), nullable=True)
+    rol            = db.Column(db.Enum('Administrador', 'Empleado', 'Estudiante', 'Visitante'), nullable=False)
+    tipo_vehiculo  = db.Column(db.Enum('carro', 'moto', 'bicicleta'), nullable=False)
+    placa          = db.Column(db.String(20), nullable=False)
+    hora_ingreso   = db.Column(db.DateTime, default=datetime.utcnow)
+    hora_salida    = db.Column(db.DateTime, nullable=True)
+    estado_pago    = db.Column(db.Enum('pendiente', 'pagado', 'exento'), default='pendiente')
 
-    id             = db.Column(db.Integer, primary_key=True)
-    placa          = db.Column(db.String(10), unique=True, nullable=False)
-    tipo_usuario   = db.Column(db.String(20), nullable=False)  # 'visitante', 'estudiante', 'profesor', 'funcionario'
-    fecha_registro = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Relación: un vehículo puede tener muchos registros de parqueo
-    registros = db.relationship('RegistroParqueo', backref='vehiculo', lazy=True)
-
-    def __repr__(self):
-        return f'<Vehiculo {self.placa} - {self.tipo_usuario}>'
-
-
-class Visitante(db.Model):
-    """Visitante externo a la universidad — solo necesita nombre y placa"""
-    __tablename__ = 'visitantes'
-
-    id         = db.Column(db.Integer, primary_key=True)
-    nombre     = db.Column(db.String(100), nullable=False)
-    placa      = db.Column(db.String(10), unique=True, nullable=False)
-
-    def __repr__(self):
-        return f'<Visitante {self.nombre} - {self.placa}>'
-
-
-class MiembroUniversidad(db.Model):
-    """Estudiante, profesor o funcionario de la universidad"""
-    __tablename__ = 'miembros'
-
-    id              = db.Column(db.Integer, primary_key=True)
-    nombre          = db.Column(db.String(100), nullable=False)
-    placa           = db.Column(db.String(10), unique=True, nullable=False)
-    codigo          = db.Column(db.String(20), unique=True, nullable=False)  # código universitario
-    tipo            = db.Column(db.String(20), nullable=False)  # 'estudiante', 'profesor', 'funcionario'
-    correo          = db.Column(db.String(100), nullable=False)
-    telefono        = db.Column(db.String(20))
-
-    def __repr__(self):
-        return f'<Miembro {self.nombre} - {self.tipo}>'
-
-
-class RegistroParqueo(db.Model):
-    """Representa una entrada y salida del parqueadero"""
-    __tablename__ = 'registros_parqueo'
-
-    id           = db.Column(db.Integer, primary_key=True)
-    placa        = db.Column(db.String(10), nullable=False)
-    hora_entrada = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    hora_salida  = db.Column(db.DateTime, nullable=True)   # None = sigue adentro
-    total_cobro  = db.Column(db.Float, nullable=True)      # None = aún no se calcula
-    vehiculo_id  = db.Column(db.Integer, db.ForeignKey('vehiculos.id'), nullable=False)
+    def calcular_estado_pago(self):
+        """El estado de pago se calcula automáticamente según el tipo de vehículo"""
+        if self.tipo_vehiculo == 'bicicleta':
+            return 'exento'
+        return 'pendiente'
 
     def calcular_cobro(self):
-        """Calcula cuánto debe pagar según el tiempo que estuvo"""
-        if not self.hora_salida:
-            return None
-        diferencia    = self.hora_salida - self.hora_entrada
+        """Calcula el cobro según el tiempo que estuvo en el parqueadero"""
+        if not self.hora_salida or self.estado_pago == 'exento':
+            return 0
+        diferencia    = self.hora_salida - self.hora_ingreso
         minutos       = diferencia.total_seconds() / 60
         tarifa_minuto = 100  # pesos colombianos por minuto
         return round(minutos * tarifa_minuto, 2)
 
     def __repr__(self):
-        return f'<Registro {self.placa} - Entrada: {self.hora_entrada}>'
+        return f'<Usuario {self.nombre} - {self.placa} - {self.rol}>'
 
 
-class PagoMensualidad(db.Model):
-    """Registra si un miembro universitario pagó su mensualidad"""
-    __tablename__ = 'pagos_mensualidad'
+class RegistroParqueo(db.Model):
+    """Historial completo de entradas y salidas"""
+    __tablename__ = 'registros_parqueo'
 
-    id             = db.Column(db.Integer, primary_key=True)
-    codigo_miembro = db.Column(db.String(20), nullable=False)
-    mes            = db.Column(db.String(7), nullable=False)   # formato: '2024-05'
-    pagado         = db.Column(db.Boolean, default=False)
-    fecha_pago     = db.Column(db.DateTime, nullable=True)
+    id           = db.Column(db.Integer, primary_key=True)
+    documento    = db.Column(db.BigInteger, nullable=False)
+    placa        = db.Column(db.String(20), nullable=False)
+    hora_entrada = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    hora_salida  = db.Column(db.DateTime, nullable=True)
+    total_cobro  = db.Column(db.Float, nullable=True)
+    estado_pago  = db.Column(db.String(20), default='pendiente')
 
     def __repr__(self):
-        return f'<Pago {self.codigo_miembro} - {self.mes} - Pagado: {self.pagado}>'
+        return f'<Registro {self.placa} - {self.hora_entrada}>'
 
 
 # ─── Crear las tablas al iniciar ───────────────────────────────────────────────
