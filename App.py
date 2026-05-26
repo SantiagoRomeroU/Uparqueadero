@@ -47,6 +47,21 @@ class Usuario(db.Model):
         tarifa_minuto = 100  # pesos colombianos por minuto
         return round(minutos * tarifa_minuto, 2)
 
+    def to_dict(self):
+        """Convierte el objeto a diccionario para respuestas JSON"""
+        return {
+            'id'           : self.id,
+            'documento'    : self.documento,
+            'nombre'       : self.nombre,
+            'correo'       : self.correo,
+            'rol'          : self.rol,
+            'tipo_vehiculo': self.tipo_vehiculo,
+            'placa'        : self.placa,
+            'hora_ingreso' : self.hora_ingreso.strftime('%Y-%m-%d %H:%M:%S') if self.hora_ingreso else None,
+            'hora_salida'  : self.hora_salida.strftime('%Y-%m-%d %H:%M:%S') if self.hora_salida else None,
+            'estado_pago'  : self.estado_pago
+        }
+
     def __repr__(self):
         return f'<Usuario {self.nombre} - {self.placa} - {self.rol}>'
 
@@ -74,7 +89,7 @@ with app.app_context():
     print("✅ Base de datos lista")
 
 
-# ─── UTILIDAD: parsear fechas del Excel ───────────────────────────────────────
+# ─── UTILIDAD: parsear fechas ─────────────────────────────────────────────────
 
 def parsear_fecha(valor):
     """Convierte cualquier formato de fecha a un objeto datetime"""
@@ -99,7 +114,7 @@ def parsear_fecha(valor):
     return None
 
 
-# ─── RUTAS ────────────────────────────────────────────────────────────────────
+# ─── RUTAS WEB ────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def inicio():
@@ -130,9 +145,7 @@ def registro():
                 mensaje      = f'El documento {documento} ya está registrado.'
                 tipo_mensaje = 'error'
             else:
-                # Estado de pago automático
                 estado_pago = 'exento' if tipo_vehiculo == 'bicicleta' else 'pendiente'
-
                 nuevo = Usuario(
                     documento     = int(documento),
                     nombre        = nombre,
@@ -249,6 +262,112 @@ def importar():
         'errores'   : errores,
         'detalles'  : detalles
     })
+
+
+# ─── API REST ─────────────────────────────────────────────────────────────────
+
+@app.route('/api/usuarios', methods=['POST'])
+def api_registrar_usuario():
+    """Registra un usuario nuevo o actualiza uno existente por documento"""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No se recibieron datos'}), 400
+
+    campos_requeridos = ['documento', 'nombre', 'rol', 'tipo_vehiculo', 'placa']
+    for campo in campos_requeridos:
+        if campo not in data:
+            return jsonify({'error': f'Falta el campo: {campo}'}), 400
+
+    tipo_vehiculo = str(data['tipo_vehiculo']).strip().lower()
+    estado_pago   = 'exento' if tipo_vehiculo == 'bicicleta' else data.get('estado_pago', 'pendiente')
+    existente     = Usuario.query.filter_by(documento=int(data['documento'])).first()
+
+    if existente:
+        existente.nombre        = data['nombre']
+        existente.correo        = data.get('correo', None)
+        existente.rol           = data['rol']
+        existente.tipo_vehiculo = tipo_vehiculo
+        existente.placa         = str(data['placa']).upper()
+        existente.estado_pago   = estado_pago
+        existente.hora_salida   = parsear_fecha(data.get('hora_salida'))
+        db.session.commit()
+        return jsonify({'mensaje': 'Usuario actualizado correctamente'}), 200
+    else:
+        nuevo = Usuario(
+            documento     = int(data['documento']),
+            nombre        = data['nombre'],
+            correo        = data.get('correo', None),
+            rol           = data['rol'],
+            tipo_vehiculo = tipo_vehiculo,
+            placa         = str(data['placa']).upper(),
+            hora_ingreso  = parsear_fecha(data.get('hora_ingreso')) or datetime.utcnow(),
+            hora_salida   = parsear_fecha(data.get('hora_salida')),
+            estado_pago   = estado_pago
+        )
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({'mensaje': 'Usuario registrado correctamente'}), 201
+
+
+@app.route('/api/usuarios', methods=['GET'])
+def api_listar_usuarios():
+    """Retorna todos los usuarios en formato JSON"""
+    usuarios = Usuario.query.all()
+    return jsonify([u.to_dict() for u in usuarios]), 200
+
+
+@app.route('/api/usuarios/<int:documento>', methods=['GET'])
+def api_obtener_usuario(documento):
+    """Retorna un usuario específico por su documento"""
+    u = Usuario.query.filter_by(documento=documento).first()
+    if not u:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+    return jsonify(u.to_dict()), 200
+
+
+@app.route('/api/usuarios/<int:documento>', methods=['DELETE'])
+def api_eliminar_usuario(documento):
+    """Elimina un usuario por su documento"""
+    u = Usuario.query.filter_by(documento=documento).first()
+    if not u:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+    db.session.delete(u)
+    db.session.commit()
+    return jsonify({'mensaje': f'Usuario {documento} eliminado correctamente'}), 200
+
+
+@app.route('/api/usuarios/<int:documento>', methods=['PUT'])
+def api_actualizar_pago(documento):
+    """Actualiza el estado de pago de un usuario"""
+    data = request.json
+    u    = Usuario.query.filter_by(documento=documento).first()
+    if not u:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+    if u.tipo_vehiculo == 'bicicleta':
+        return jsonify({'error': 'Las bicicletas son exentas, no requieren pago'}), 400
+    nuevo_estado = data.get('estado_pago')
+    if nuevo_estado not in ['pendiente', 'pagado']:
+        return jsonify({'error': 'Estado de pago inválido'}), 400
+    u.estado_pago = nuevo_estado
+    db.session.commit()
+    return jsonify({'mensaje': f'Estado de pago actualizado a {nuevo_estado}'}), 200
+
+
+@app.route('/api/mensualidad/<int:documento>', methods=['GET'])
+def api_verificar_mensualidad(documento):
+    """Verifica si un miembro universitario tiene la mensualidad al día"""
+    u = Usuario.query.filter_by(documento=documento).first()
+    if not u:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+    if u.rol == 'Visitante':
+        return jsonify({'error': 'Los visitantes no tienen mensualidad'}), 400
+    return jsonify({
+        'documento' : u.documento,
+        'nombre'    : u.nombre,
+        'rol'       : u.rol,
+        'estado_pago': u.estado_pago,
+        'al_dia'    : u.estado_pago == 'pagado'
+    }), 200
 
 
 # ─── Punto de entrada ──────────────────────────────────────────────────────────
