@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importar Excel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .contenedor {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 520px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1a1a2e;
+            margin-bottom: 8px;
+            font-size: 22px;
+        }
+
+        .subtitulo {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        .zona-subida {
+            border: 2px dashed #4a90d9;
+            border-radius: 10px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: background 0.2s;
+        }
+
+        .zona-subida:hover {
+            background-color: #f0f7ff;
+        }
+
+        .zona-subida p {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .zona-subida .icono {
+            font-size: 40px;
+        }
+
+        #archivo {
+            display: none;
+        }
+
+        .nombre-archivo {
+            font-size: 13px;
+            color: #4a90d9;
+            margin-bottom: 15px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .btn-importar {
+            width: 100%;
+            padding: 14px;
+            background-color: #4a90d9;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-importar:hover { background-color: #357abd; }
+        .btn-importar:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+
+        .resultado {
+            margin-top: 25px;
+            display: none;
+        }
+
+        .resultado h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #1a1a2e;
+        }
+
+        .item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+
+        .item.exito   { background: #d4edda; color: #155724; }
+        .item.omitido { background: #fff3cd; color: #856404; }
+        .item.error   { background: #f8d7da; color: #721c24; }
+
+        .resumen {
+            margin-top: 15px;
+            padding: 12px;
+            background: #e8f0fe;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+            color: #1a1a2e;
+            font-weight: bold;
+        }
+
+        .columnas {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #888;
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .columnas strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="contenedor">
+        <h1>📊 Importar usuarios desde Excel</h1>
+        <p class="subtitulo">Sube un archivo .xlsx para cargar usuarios masivamente</p>
+
+        <form id="form-importar" enctype="multipart/form-data">
+
+            <div class="zona-subida" onclick="document.getElementById('archivo').click()">
+                <div class="icono">📁</div>
+                <p>Clic aquí para seleccionar el archivo Excel</p>
+                <p style="font-size:12px; margin-top:5px;">Solo archivos .xlsx</p>
+            </div>
+
+            <input type="file" id="archivo" name="archivo" accept=".xlsx">
+            <div class="nombre-archivo" id="nombre-archivo">Ningún archivo seleccionado</div>
+
+            <button type="button" class="btn-importar" id="btn-importar" disabled onclick="importar()">
+                Importar
+            </button>
+
+        </form>
+
+        <div class="columnas">
+            <strong>Columnas requeridas en el Excel:</strong>
+            documento, nombre, correo, rol, tipo_vehiculo, placa, hora_ingreso, estado_pago, hora_salida
+        </div>
+
+        <div class="resultado" id="resultado">
+            <h3>Resultado de la importación:</h3>
+            <div id="lista-resultados"></div>
+            <div class="resumen" id="resumen"></div>
+        </div>
+    </div>
+
+    <script>
+        // Mostrar nombre del archivo al seleccionarlo
+        document.getElementById('archivo').addEventListener('change', function() {
+            const nombre = this.files[0] ? this.files[0].name : 'Ningún archivo seleccionado';
+            document.getElementById('nombre-archivo').textContent = nombre;
+            document.getElementById('btn-importar').disabled = !this.files[0];
+        });
+
+        async function importar() {
+            const archivo = document.getElementById('archivo').files[0];
+            if (!archivo) return;
+
+            const btn = document.getElementById('btn-importar');
+            btn.disabled  = true;
+            btn.textContent = 'Importando...';
+
+            const formData = new FormData();
+            formData.append('archivo', archivo);
+
+            try {
+                const respuesta = await fetch('/importar', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const datos = await respuesta.json();
+                mostrarResultados(datos);
+
+            } catch (error) {
+                alert('Error al importar. Intenta de nuevo.');
+            } finally {
+                btn.disabled    = false;
+                btn.textContent = 'Importar';
+            }
+        }
+
+        function mostrarResultados(datos) {
+            const lista   = document.getElementById('lista-resultados');
+            const resumen = document.getElementById('resumen');
+            const div     = document.getElementById('resultado');
+
+            lista.innerHTML = '';
+
+            datos.detalles.forEach(item => {
+                const el = document.createElement('div');
+                el.className = `item ${item.tipo}`;
+                el.textContent = item.mensaje;
+                lista.appendChild(el);
+            });
+
+            resumen.textContent =
+                `✅ Insertados: ${datos.insertados} — ⚠️ Omitidos: ${datos.omitidos} — ❌ Errores: ${datos.errores}`;
+
+            div.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
