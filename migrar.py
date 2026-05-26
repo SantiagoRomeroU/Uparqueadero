@@ -1,111 +1,108 @@
 import pandas as pd
-import mysql.connector
+from App import app, db, Usuario
+from datetime import datetime
+import re
 
-df = pd.read_excel(
-    "C:/Users/USUARIO/OneDrive/Documentos/Proyecto Final sistemas operativos/datos.xlsx",
-    header=0
-)
+def parsear_fecha(valor):
+    """Convierte cualquier formato de fecha a un objeto datetime"""
+    if pd.isna(valor) or valor is None:
+        return None
+    
+    if hasattr(valor, 'to_pydatetime'):
+        return valor.to_pydatetime()
+    
+    if isinstance(valor, datetime):
+        return valor
+    
+    valor_str = str(valor).strip()
+    valor_str = valor_str.replace('\xa0', ' ')
+    valor_str = re.sub(r'p\.\s*m\.', 'PM', valor_str, flags=re.IGNORECASE)
+    valor_str = re.sub(r'a\.\s*m\.', 'AM', valor_str, flags=re.IGNORECASE)
+    
+    formatos = [
+        '%d/%m/%Y %I:%M:%S %p',
+        '%d/%m/%Y %H:%M:%S',
+        '%Y-%m-%d %H:%M:%S',
+        '%d/%m/%Y %H:%M',
+        '%Y-%m-%d',
+    ]
+    
+    for fmt in formatos:
+        try:
+            return datetime.strptime(valor_str, fmt)
+        except ValueError:
+            continue
+    
+    print(f"⚠️  No se pudo parsear la fecha: {valor_str}")
+    return None
 
-df.columns = df.columns.str.strip()
 
-conn = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="",
-    database="parqueadero_unimonserrate"
-)
+def migrar_excel(ruta_excel):
+    """Lee el Excel y migra los datos a SQLite"""
 
-cursor = conn.cursor()
+    print("📂 Leyendo archivo Excel...")
+    df = pd.read_excel(ruta_excel, header=0)
+    df.columns = df.columns.str.strip()
 
-cursor.execute("SELECT documento FROM usuarios")
+    map_pago = {
+        "gratis"      : "exento",
+        "mensualidad" : "pagado",
+        "pago"        : "pagado",
+        "pendiente"   : "pendiente",
+        "exento"      : "exento"
+    }
 
-documentos_existentes = [
-    fila[0] for fila in cursor.fetchall()
-]
+    insertados = 0
+    omitidos   = 0
 
-map_pago = {
-    "gratis": "exento",
-    "mensualidad": "pagado",
-    "pago": "pagado",
-    "pendiente": "pendiente"
-}
+    with app.app_context():
+        for _, row in df.iterrows():
+            documento = int(row["documento"])
 
-for _, row in df.iterrows():
+            existente = Usuario.query.filter_by(documento=documento).first()
+            if existente:
+                print(f"⚠️  Ya existe: {documento}")
+                omitidos += 1
+                continue
 
-    documento = int(row["documento"])
+            estado_pago = "pendiente"
+            if pd.notna(row.get("estado_pago")):
+                estado_pago = map_pago.get(
+                    str(row["estado_pago"]).strip().lower(),
+                    "pendiente"
+                )
 
-    if documento in documentos_existentes:
+            tipo_vehiculo = str(row["tipo_vehiculo"]).strip().lower()
+            if tipo_vehiculo == "bicicleta":
+                estado_pago = "exento"
 
-        print(f"Documento ya existe: {documento}")
+            correo = None
+            if pd.notna(row.get("correo")):
+                correo = str(row["correo"]).strip()
 
-        continue
+            hora_ingreso = parsear_fecha(row.get("hora_ingreso")) or datetime.utcnow()
+            hora_salida  = parsear_fecha(row.get("hora_salida"))
 
-    estado_pago = "pendiente"
+            nuevo = Usuario(
+                documento     = documento,
+                nombre        = str(row["nombre"]).strip(),
+                correo        = correo,
+                rol           = str(row["rol"]).strip(),
+                tipo_vehiculo = tipo_vehiculo,
+                placa         = str(row["placa"]).strip().upper(),
+                hora_ingreso  = hora_ingreso,
+                hora_salida   = hora_salida,
+                estado_pago   = estado_pago
+            )
 
-    if pd.notna(row["estado_pago"]):
+            db.session.add(nuevo)
+            print(f"✅ Insertado: {documento} - {row['nombre']}")
+            insertados += 1
 
-        estado_pago = map_pago.get(
-            str(row["estado_pago"]).strip().lower(),
-            "pendiente"
-        )
+        db.session.commit()
+        print(f"\n🎉 Migración completada: {insertados} insertados, {omitidos} omitidos")
 
-    correo = "sin_correo@unimonserrate.edu.co"
 
-    if pd.notna(row["correo"]):
-
-        correo = str(row["correo"]).strip()
-
-    hora_salida = None
-
-    if pd.notna(row["hora_salida"]):
-
-        hora_salida = row["hora_salida"]
-
-    cursor.execute("""
-
-        INSERT INTO usuarios (
-
-            documento,
-            nombre,
-            correo,
-            rol,
-            tipo_vehiculo,
-            placa,
-            hora_ingreso,
-            estado_pago,
-            hora_salida
-
-        )
-
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-
-    """, (
-
-        documento,
-
-        str(row["nombre"]).strip(),
-
-        correo,
-
-        str(row["rol"]).strip(),
-
-        str(row["tipo_vehiculo"]).strip(),
-
-        str(row["placa"]).strip().upper(),
-
-        row["hora_ingreso"],
-
-        estado_pago,
-
-        hora_salida
-
-    ))
-
-    print(f"Usuario insertado: {documento}")
-
-conn.commit()
-
-cursor.close()
-conn.close()
-
-print("Migración completada correctamente")
+if __name__ == '__main__':
+    ruta = input("📁 Escribe la ruta completa del archivo Excel: ")
+    migrar_excel(ruta)
