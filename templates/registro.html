@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro Parqueadero</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .contenedor {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 480px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1a1a2e;
+            margin-bottom: 8px;
+            font-size: 24px;
+        }
+
+        .subtitulo {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .selector-tipo {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+
+        .btn-tipo {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .btn-tipo:hover {
+            border-color: #4a90d9;
+            color: #4a90d9;
+        }
+
+        .btn-tipo.activo {
+            background-color: #4a90d9;
+            border-color: #4a90d9;
+            color: white;
+        }
+
+        .grupo {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4a90d9;
+        }
+
+        .seccion {
+            display: none;
+        }
+
+        .seccion.visible {
+            display: block;
+        }
+
+        .btn-enviar {
+            width: 100%;
+            padding: 14px;
+            background-color: #4a90d9;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+
+        .btn-enviar:hover {
+            background-color: #357abd;
+        }
+
+        .mensaje {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 14px;
+            display: none;
+        }
+
+        .mensaje.exito {
+            background-color: #d4edda;
+            color: #155724;
+            display: block;
+        }
+
+        .mensaje.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="contenedor">
+        <h1>🅿️ Parqueadero</h1>
+        <p class="subtitulo">Universidad — Registro de vehículo</p>
+
+        <!-- Mensaje de respuesta del servidor -->
+        {% if mensaje %}
+            <div class="mensaje {{ tipo_mensaje }}">{{ mensaje }}</div>
+        {% endif %}
+
+        <!-- Botones para elegir tipo de usuario -->
+        <div class="selector-tipo">
+            <button class="btn-tipo" onclick="mostrarSeccion('visitante')" id="btn-visitante">
+                👤 Visitante
+            </button>
+            <button class="btn-tipo" onclick="mostrarSeccion('miembro')" id="btn-miembro">
+                🎓 Miembro universidad
+            </button>
+        </div>
+
+        <form method="POST" action="/registro">
+
+            <!-- Campos oculto para saber qué tipo se registra -->
+            <input type="hidden" name="tipo_usuario" id="tipo_usuario" value="">
+
+            <!-- ── Sección visitante ── -->
+            <div class="seccion" id="seccion-visitante">
+                <div class="grupo">
+                    <label>Nombre completo</label>
+                    <input type="text" name="nombre_visitante" placeholder="Ej: Juan Pérez">
+                </div>
+                <div class="grupo">
+                    <label>Placa del vehículo</label>
+                    <input type="text" name="placa_visitante" placeholder="Ej: ABC123" maxlength="10">
+                </div>
+            </div>
+
+            <!-- ── Sección miembro universidad ── -->
+            <div class="seccion" id="seccion-miembro">
+                <div class="grupo">
+                    <label>Nombre completo</label>
+                    <input type="text" name="nombre_miembro" placeholder="Ej: María González">
+                </div>
+                <div class="grupo">
+                    <label>Placa del vehículo</label>
+                    <input type="text" name="placa_miembro" placeholder="Ej: ABC123" maxlength="10">
+                </div>
+                <div class="grupo">
+                    <label>Código universitario</label>
+                    <input type="text" name="codigo" placeholder="Ej: 20201234">
+                </div>
+                <div class="grupo">
+                    <label>Tipo</label>
+                    <select name="tipo_miembro">
+                        <option value="">-- Selecciona --</option>
+                        <option value="estudiante">Estudiante</option>
+                        <option value="profesor">Profesor</option>
+                        <option value="funcionario">Funcionario</option>
+                    </select>
+                </div>
+                <div class="grupo">
+                    <label>Correo institucional</label>
+                    <input type="email" name="correo" placeholder="Ej: maria@universidad.edu.co">
+                </div>
+                <div class="grupo">
+                    <label>Teléfono</label>
+                    <input type="text" name="telefono" placeholder="Ej: 3001234567">
+                </div>
+            </div>
+
+            <!-- Botón enviar, solo aparece si eligió un tipo -->
+            <div id="contenedor-boton" style="display:none;">
+                <button type="submit" class="btn-enviar">Registrarme</button>
+            </div>
+
+        </form>
+    </div>
+
+    <script>
+        function mostrarSeccion(tipo) {
+            // Ocultar ambas secciones
+            document.getElementById('seccion-visitante').classList.remove('visible');
+            document.getElementById('seccion-miembro').classList.remove('visible');
+
+            // Quitar clase activo de ambos botones
+            document.getElementById('btn-visitante').classList.remove('activo');
+            document.getElementById('btn-miembro').classList.remove('activo');
+
+            // Mostrar la sección correcta
+            document.getElementById('seccion-' + tipo).classList.add('visible');
+
+            // Marcar botón activo
+            document.getElementById('btn-' + tipo).classList.add('activo');
+
+            // Guardar el tipo en el campo oculto
+            document.getElementById('tipo_usuario').value = tipo;
+
+            // Mostrar el botón de enviar
+            document.getElementById('contenedor-boton').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
